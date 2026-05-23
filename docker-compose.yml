@@ -1,0 +1,46 @@
+services:
+  yggdrasil:
+    image: ghcr.io/yggdrasil-network/yggdrasil-go:latest
+    container_name: yggdrasil
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+    volumes:
+      - ygg-config:/etc/yggdrasil
+    environment:
+      YGG_PEERS: "${YGG_PEERS:-}"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ ! -f /etc/yggdrasil/yggdrasil.conf ]; then
+          echo "Config not found. Generating base config..."
+          yggdrasil -genconf > /etc/yggdrasil/yggdrasil.conf
+        fi
+        
+        if [ -n "$$YGG_PEERS" ]; then
+          echo "Syncing peers from YGG_PEERS..."
+          LIST=""
+          for p in $$YGG_PEERS; do
+            LIST="$$LIST \"$$p\","
+          done
+          sed -i "s|Peers:\s*\[.*\]|Peers: [$$LIST]|g" /etc/yggdrasil/yggdrasil.conf
+        fi
+        
+        exec yggdrasil -useconffile /etc/yggdrasil/yggdrasil.conf
+
+  socks5:
+    image: vimagick/microsocks:latest
+    container_name: ygg-socks5
+    restart: unless-stopped
+    network_mode: "service:yggdrasil"
+    command: "-p 1080 -i ::"
+    depends_on:
+      - yggdrasil
+
+volumes:
+  ygg-config:
