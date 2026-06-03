@@ -1,7 +1,7 @@
+name: yggdrasil-clearnet-proxy
 services:
   yggdrasil:
     image: ghcr.io/yggdrasil-network/yggdrasil-go:latest
-    container_name: yggdrasil
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
@@ -9,19 +9,24 @@ services:
       - /dev/net/tun:/dev/net/tun
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
-    volumes:
-      - ygg-config:/etc/yggdrasil
     environment:
-      YGG_PEERS: "${YGG_PEERS:-}"
+      - YGG_PRIV_KEY=${YGG_PRIV_KEY:?YGG_PRIV_KEY is required}
+      - YGG_PEERS=${YGG_PEERS:?YGG_PEERS is required}
     entrypoint:
       - /bin/sh
       - -c
       - |
-        if [ ! -f /etc/yggdrasil/yggdrasil.conf ]; then
-          echo "Config not found. Generating base config..."
-          yggdrasil -genconf > /etc/yggdrasil/yggdrasil.conf
-        fi
+        echo "Generating base config..."
+        mkdir -p /etc/yggdrasil
+        yggdrasil -genconf > /etc/yggdrasil/yggdrasil.conf
         
+        if [ -n "$$YGG_PRIV_KEY" ]; then
+          echo "Syncing YGG_PRIV_KEY..."
+          sed -i "s|^\s*PrivateKey:.*|  PrivateKey: $$YGG_PRIV_KEY|g" /etc/yggdrasil/yggdrasil.conf
+        fi
+
+        cat /etc/yggdrasil/yggdrasil.conf
+
         if [ -n "$$YGG_PEERS" ]; then
           echo "Syncing peers from YGG_PEERS..."
           LIST=""
@@ -35,7 +40,6 @@ services:
 
   socks5:
     image: vimagick/microsocks:latest
-    container_name: ygg-socks5
     restart: unless-stopped
     network_mode: "service:yggdrasil"
     command: "-p 1080 -i ::"
